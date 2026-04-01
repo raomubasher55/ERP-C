@@ -1,0 +1,170 @@
+{
+  "info": {
+    "name": "EPR Backend API",
+    "_postman_id": "9c7a5c4c-6c2d-4d11-a6d8-7d2b5b1c3f1a",
+    "description": "Postman collection for EPR backend (auth + clinics).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:4000" },
+    { "key": "token", "value": "" },
+    { "key": "clinicId", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Register",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/api/auth/register", "host": ["{{baseUrl}}"], "path": ["api", "auth", "register"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Dr. Ayesha\",\n  \"email\": \"ayesha@example.com\",\n  \"password\": \"Passw0rd!\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const data = pm.response.json();",
+                  "if (data && data.token) {",
+                  "  pm.collectionVariables.set('token', data.token);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/api/auth/login", "host": ["{{baseUrl}}"], "path": ["api", "auth", "login"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"ayesha@example.com\",\n  \"password\": \"Passw0rd!\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const data = pm.response.json();",
+                  "if (data && data.token) {",
+                  "  pm.collectionVariables.set('token', data.token);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Me",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{baseUrl}}/api/auth/me", "host": ["{{baseUrl}}"], "path": ["api", "auth", "me"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Clinics",
+      "item": [
+        {
+          "name": "Create Clinic",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": { "raw": "{{baseUrl}}/api/clinics", "host": ["{{baseUrl}}"], "path": ["api", "clinics"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"City Care Clinic\",\n  \"phone\": \"+92-300-1234567\",\n  \"email\": \"clinic@example.com\",\n  \"address\": \"1 Main Road\",\n  \"city\": \"Lahore\",\n  \"ownerName\": \"Dr. Ayesha\",\n  \"subscriptionPlan\": \"starter\",\n  \"workingDays\": [\"Mon\", \"Tue\", \"Wed\", \"Thu\", \"Fri\"],\n  \"startTime\": \"10:00\",\n  \"endTime\": \"17:00\",\n  \"slotDuration\": 15,\n  \"features\": { \"whatsappReminder\": false, \"onlineBooking\": false },\n  \"isActive\": true\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const data = pm.response.json();",
+                  "if (data && data.clinic && data.clinic._id) {",
+                  "  pm.collectionVariables.set('clinicId', data.clinic._id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List Clinics",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/clinics?page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "clinics"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Clinic",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/clinics/{{clinicId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "clinics", "{{clinicId}}"]
+            }
+          }
+        },
+        {
+          "name": "Update Clinic",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/clinics/{{clinicId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "clinics", "{{clinicId}}"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"+92-300-7654321\",\n  \"subscriptionPlan\": \"pro\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Delete Clinic",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/clinics/{{clinicId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "clinics", "{{clinicId}}"]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

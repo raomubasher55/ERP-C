@@ -1,0 +1,20 @@
+@import "tailwindcss";
+@import url("https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap");
+
+:root {
+  color-scheme: light;
+}
+
+body {
+  font-family: "Manrope", ui-sans-serif, system-ui, sans-serif;
+  background: #f7f4ef;
+  color: #0b1e1c;
+}
+
+.font-display {
+  font-family: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+}
+
+.bg-app-gradient {
+  background: linear-gradient(140deg, #f7f4ef 10%, #e9f7f4 55%, #fef6ef 100%);
+}
