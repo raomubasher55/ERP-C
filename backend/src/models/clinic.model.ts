@@ -3,6 +3,9 @@ import { Schema, model, Document, Model, Types } from "mongoose";
 export interface ClinicDocument extends Document {
   ownerUserId: Types.ObjectId;
   appointments: number;
+  createdByUserId?: Types.ObjectId;
+  updatedByUserId?: Types.ObjectId;
+  deletedAt?: Date | null;
   name: string;
   phone: string;
   email?: string;
@@ -37,6 +40,9 @@ const clinicSchema = new Schema<ClinicDocument>(
   {
     ownerUserId: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
     appointments: { type: Number, default: 0, min: 0 },
+    createdByUserId: { type: Schema.Types.ObjectId, ref: "User", index: true },
+    updatedByUserId: { type: Schema.Types.ObjectId, ref: "User", index: true },
+    deletedAt: { type: Date, default: null },
     name: { type: String, required: true, trim: true },
 
     phone: { type: String, required: true, trim: true },

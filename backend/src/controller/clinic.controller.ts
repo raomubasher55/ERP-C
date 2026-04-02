@@ -40,7 +40,11 @@ export const createClinicHandler = async (req: Request, res: Response) => {
 
     const { ownerUserId: _omit, ...payload } = parsed.data;
 
-    const clinic = await createClinic(ownerUserId, payload);
+    const clinic = await createClinic(ownerUserId, {
+      ...payload,
+      createdByUserId: String(req.user._id),
+      updatedByUserId: String(req.user._id),
+    });
 
     return res.status(201).json({ clinic: clinic.toJSON() });
   } catch (err) {
@@ -64,17 +68,20 @@ export const listClinicsHandler = async (req: Request, res: Response) => {
 
     const isAdmin = req.user.role === "admin";
     const isPatient = req.user.role === "patient";
+    const isClinicOwner = req.user.role === "clinic" || req.user.role === "clinic_owner";
+    const isStaff = req.user.role === "doctor" || req.user.role === "receptionist";
     if (!isAdmin && parsedQuery.data.ownerUserId) {
       return res.status(403).json({ message: "Forbidden" });
     }
 
-    const ownerFilter = isAdmin ? null : isPatient ? null : req.user._id;
+    const ownerFilter = isAdmin ? null : isClinicOwner ? req.user._id : null;
+    const clinicIds = isStaff ? (req.user.clinicIds ?? []) : null;
     const query = { ...parsedQuery.data };
     if (isPatient && query.isActive === undefined) {
       query.isActive = true;
     }
 
-    const { clinics, total } = await listClinics(ownerFilter, query);
+    const { clinics, total } = await listClinics(ownerFilter, query, clinicIds);
 
     return res.status(200).json({
       clinics: clinics.map((c) => c.toJSON()),
@@ -103,8 +110,11 @@ export const getClinicHandler = async (req: Request, res: Response) => {
 
     const isAdmin = req.user.role === "admin";
     const isPatient = req.user.role === "patient";
-    const ownerFilter = isAdmin ? null : isPatient ? null : req.user._id;
-    const clinic = await getClinicById(ownerFilter, parsedParams.data.id);
+    const isClinicOwner = req.user.role === "clinic" || req.user.role === "clinic_owner";
+    const isStaff = req.user.role === "doctor" || req.user.role === "receptionist";
+    const ownerFilter = isAdmin ? null : isClinicOwner ? req.user._id : null;
+    const clinicIds = isStaff ? (req.user.clinicIds ?? []) : null;
+    const clinic = await getClinicById(ownerFilter, parsedParams.data.id, clinicIds);
     if (!clinic) {
       return res.status(404).json({ message: "Clinic not found" });
     }
@@ -146,7 +156,10 @@ export const updateClinicHandler = async (req: Request, res: Response) => {
     }
 
     const ownerFilter = isAdmin ? null : req.user._id;
-    const updates: Record<string, unknown> = { ...parsedBody.data };
+    const updates: Record<string, unknown> = {
+      ...parsedBody.data,
+      updatedByUserId: req.user._id,
+    };
     if (updates.ownerUserId && isAdmin) {
       updates.ownerUserId = new Types.ObjectId(String(updates.ownerUserId));
     }
@@ -181,7 +194,7 @@ export const deleteClinicHandler = async (req: Request, res: Response) => {
     }
 
     const ownerFilter = req.user.role === "admin" ? null : req.user._id;
-    const clinic = await deleteClinic(ownerFilter, parsedParams.data.id);
+    const clinic = await deleteClinic(ownerFilter, parsedParams.data.id, req.user._id);
     if (!clinic) {
       return res.status(404).json({ message: "Clinic not found" });
     }

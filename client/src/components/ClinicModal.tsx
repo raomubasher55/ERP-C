@@ -9,7 +9,7 @@ type ClinicModalProps = {
   mode: "create" | "edit";
   clinic?: Clinic | null;
   token: string;
-  userRole?: "admin" | "clinic" | "patient";
+  userRole?: "admin" | "clinic_owner" | "clinic" | "doctor" | "receptionist" | "patient";
   onClose: () => void;
   onSaved: (clinic: Clinic) => void;
   onError: (message: string) => void;
@@ -88,7 +88,7 @@ const ClinicModal = ({
       setUsersLoading(true);
       try {
         const res = await api.get<{ users: User[] }>(
-          "/api/users?role=clinic",
+          "/api/users?role=clinic_owner",
           token
         );
         setClinicUsers(res.users);
@@ -171,7 +171,7 @@ const ClinicModal = ({
     }
 
     return clean;
-  }, [form]);
+  }, [form, userRole]);
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();

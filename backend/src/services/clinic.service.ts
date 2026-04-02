@@ -7,12 +7,15 @@ export const createClinic = (ownerUserId: Types.ObjectId, payload: ClinicCreateI
 
 export const listClinics = async (
   ownerUserId: Types.ObjectId | null,
-  opts: ClinicListQuery
+  opts: ClinicListQuery,
+  clinicIds?: Types.ObjectId[] | null
 ) => {
-  const filter: Record<string, unknown> = {};
+  const filter: Record<string, unknown> = { deletedAt: null };
 
   if (ownerUserId) {
     filter.ownerUserId = ownerUserId;
+  } else if (clinicIds && clinicIds.length > 0) {
+    filter._id = { $in: clinicIds };
   } else if (opts.ownerUserId) {
     filter.ownerUserId = new Types.ObjectId(opts.ownerUserId);
   }
@@ -40,10 +43,19 @@ export const listClinics = async (
   return { clinics, total };
 };
 
-export const getClinicById = (ownerUserId: Types.ObjectId | null, id: string) =>
+export const getClinicById = (
+  ownerUserId: Types.ObjectId | null,
+  id: string,
+  clinicIds?: Types.ObjectId[] | null
+) =>
   ownerUserId
-    ? Clinic.findOne({ _id: id, ownerUserId }).exec()
-    : Clinic.findById(id).exec();
+    ? Clinic.findOne({ _id: id, ownerUserId, deletedAt: null }).exec()
+    : clinicIds && clinicIds.length > 0
+      ? Clinic.findOne({
+          $and: [{ _id: id }, { _id: { $in: clinicIds } }],
+          deletedAt: null,
+        }).exec()
+      : Clinic.findOne({ _id: id, deletedAt: null }).exec();
 
 export const updateClinic = (
   ownerUserId: Types.ObjectId | null,
@@ -51,16 +63,28 @@ export const updateClinic = (
   updates: ClinicUpdateInput
 ) =>
   ownerUserId
-    ? Clinic.findOneAndUpdate({ _id: id, ownerUserId }, updates, {
+    ? Clinic.findOneAndUpdate({ _id: id, ownerUserId, deletedAt: null }, updates, {
         new: true,
         runValidators: true,
       }).exec()
-    : Clinic.findByIdAndUpdate(id, updates, {
+    : Clinic.findOneAndUpdate({ _id: id, deletedAt: null }, updates, {
         new: true,
         runValidators: true,
       }).exec();
 
-export const deleteClinic = (ownerUserId: Types.ObjectId | null, id: string) =>
+export const deleteClinic = (
+  ownerUserId: Types.ObjectId | null,
+  id: string,
+  updatedByUserId?: Types.ObjectId
+) =>
   ownerUserId
-    ? Clinic.findOneAndDelete({ _id: id, ownerUserId }).exec()
-    : Clinic.findByIdAndDelete(id).exec();
+    ? Clinic.findOneAndUpdate(
+        { _id: id, ownerUserId, deletedAt: null },
+        { deletedAt: new Date(), isActive: false, updatedByUserId },
+        { new: true }
+      ).exec()
+    : Clinic.findOneAndUpdate(
+        { _id: id, deletedAt: null },
+        { deletedAt: new Date(), isActive: false, updatedByUserId },
+        { new: true }
+      ).exec();

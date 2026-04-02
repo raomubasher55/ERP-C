@@ -2,7 +2,8 @@ export type User = {
   _id: string;
   name: string;
   email: string;
-  role: "admin" | "clinic" | "patient";
+  role: "admin" | "clinic_owner" | "clinic" | "doctor" | "receptionist" | "patient";
+  clinicIds?: string[];
   createdAt: string;
   updatedAt: string;
 };

@@ -6,12 +6,12 @@ import Login from "./pages/Login";
 import Register from "./pages/Register";
 import PatientDashboard from "./pages/PatientDashboard";
 import Appointments from "./pages/Appointments";
-import AppointmentNew from "./pages/AppointmentNew";
 import "./App.css";
 
 const getDefaultPath = (role?: string) => {
   if (role === "admin") return "/admin";
-  if (role === "clinic") return "/clinic";
+  if (role === "clinic" || role === "clinic_owner") return "/clinic";
+  if (role === "doctor" || role === "receptionist") return "/appointments";
   if (role === "patient") return "/patient";
   return "/";
 };
@@ -21,7 +21,9 @@ const RequireAuth = ({
   allowedRoles,
 }: {
   children: React.ReactNode;
-  allowedRoles?: Array<"admin" | "clinic" | "patient">;
+  allowedRoles?: Array<
+    "admin" | "clinic_owner" | "clinic" | "doctor" | "receptionist" | "patient"
+  >;
 }) => {
   const { token, isLoading, user } = useAuth();
   const location = useLocation();
@@ -86,7 +88,7 @@ function App() {
         <Route
           path="/clinic"
           element={
-            <RequireAuth allowedRoles={["clinic"]}>
+            <RequireAuth allowedRoles={["clinic_owner", "clinic"]}>
               <ClinicDashboard />
             </RequireAuth>
           }
@@ -102,16 +104,17 @@ function App() {
         <Route
           path="/appointments"
           element={
-            <RequireAuth allowedRoles={["admin", "clinic", "patient"]}>
+            <RequireAuth
+              allowedRoles={[
+                "admin",
+                "clinic_owner",
+                "clinic",
+                "doctor",
+                "receptionist",
+                "patient",
+              ]}
+            >
               <Appointments />
-            </RequireAuth>
-          }
-        />
-        <Route
-          path="/appointments/new"
-          element={
-            <RequireAuth allowedRoles={["patient"]}>
-              <AppointmentNew />
             </RequireAuth>
           }
         />

@@ -5,6 +5,7 @@ import {
   appointmentCreateSchema,
   appointmentIdParamSchema,
   appointmentListQuerySchema,
+  appointmentSlotsQuerySchema,
   appointmentUpdateSchema,
 } from "../validators/appointment.validator";
 import { formatZodError } from "../utils/validation.util";
@@ -13,6 +14,7 @@ import {
   createAppointment,
   deleteAppointment,
   findClinicAppointmentConflict,
+  getBookedSlotsForDate,
   getAppointmentById,
   listAppointments,
   refreshClinicAppointmentsToday,
@@ -22,6 +24,22 @@ import {
 const getOwnedClinicIds = async (userId: Types.ObjectId) => {
   const clinics = await Clinic.find({ ownerUserId: userId }).select("_id").exec();
   return clinics.map((c) => c._id);
+};
+
+const isAdminRole = (role?: string) => role === "admin";
+const isPatientRole = (role?: string) => role === "patient";
+const isClinicOwnerRole = (role?: string) => role === "clinic" || role === "clinic_owner";
+const isClinicStaffRole = (role?: string) =>
+  role === "doctor" || role === "receptionist";
+
+const getAccessibleClinicIds = async (user: { role?: string; _id: Types.ObjectId; clinicIds?: Types.ObjectId[] }) => {
+  if (isClinicOwnerRole(user.role)) {
+    return getOwnedClinicIds(user._id);
+  }
+  if (isClinicStaffRole(user.role)) {
+    return user.clinicIds ?? [];
+  }
+  return null;
 };
 
 export const createAppointmentHandler = async (req: Request, res: Response) => {
@@ -36,17 +54,22 @@ export const createAppointmentHandler = async (req: Request, res: Response) => {
       });
     }
 
-    if (req.user.role === "patient") {
+    if (isPatientRole(req.user.role)) {
       const clinic = await Clinic.findById(parsed.data.clinicId).select("isActive").exec();
       if (!clinic || clinic.isActive === false) {
         return res.status(404).json({ message: "Clinic not found" });
       }
     }
 
-    if (req.user.role === "clinic") {
+    if (isClinicOwnerRole(req.user.role)) {
       const owned = await getOwnedClinicIds(req.user._id);
       const isOwned = owned.some((id) => id.equals(parsed.data.clinicId));
       if (!isOwned) return res.status(403).json({ message: "Forbidden" });
+    }
+    if (isClinicStaffRole(req.user.role)) {
+      const assigned = req.user.clinicIds ?? [];
+      const isAssigned = assigned.some((id) => id.equals(parsed.data.clinicId));
+      if (!isAssigned) return res.status(403).json({ message: "Forbidden" });
     }
 
     const scheduledAt = new Date(parsed.data.scheduledAt);
@@ -63,8 +86,9 @@ export const createAppointmentHandler = async (req: Request, res: Response) => {
     const payload = {
       ...parsed.data,
       scheduledAt,
+      updatedByUserId: req.user._id,
     };
-    if (req.user.role === "patient") {
+    if (isPatientRole(req.user.role)) {
       delete payload.status;
     }
 
@@ -90,11 +114,18 @@ export const listAppointmentsHandler = async (req: Request, res: Response) => {
     }
 
     let clinicIds: Types.ObjectId[] | null = null;
-    if (req.user.role === "clinic") {
+    if (isClinicOwnerRole(req.user.role)) {
       clinicIds = await getOwnedClinicIds(req.user._id);
       if (parsed.data.clinicId) {
         const isOwned = clinicIds.some((id) => id.equals(parsed.data.clinicId));
         if (!isOwned) return res.status(403).json({ message: "Forbidden" });
+      }
+    }
+    if (isClinicStaffRole(req.user.role)) {
+      clinicIds = req.user.clinicIds ?? [];
+      if (parsed.data.clinicId) {
+        const isAssigned = clinicIds.some((id) => id.equals(parsed.data.clinicId));
+        if (!isAssigned) return res.status(403).json({ message: "Forbidden" });
       }
     }
 
@@ -102,7 +133,7 @@ export const listAppointmentsHandler = async (req: Request, res: Response) => {
       ...parsed.data,
       dateFrom: parsed.data.dateFrom ? new Date(parsed.data.dateFrom) : undefined,
       dateTo: parsed.data.dateTo ? new Date(parsed.data.dateTo) : undefined,
-      createdByUserId: req.user.role === "patient" ? req.user._id : undefined,
+      createdByUserId: isPatientRole(req.user.role) ? req.user._id : undefined,
     });
 
     return res.status(200).json({
@@ -131,12 +162,17 @@ export const getAppointmentHandler = async (req: Request, res: Response) => {
     const appointment = await getAppointmentById(parsed.data.id);
     if (!appointment) return res.status(404).json({ message: "Appointment not found" });
 
-    if (req.user.role === "clinic") {
+    if (isClinicOwnerRole(req.user.role)) {
       const owned = await getOwnedClinicIds(req.user._id);
       const isOwned = owned.some((id) => id.equals(appointment.clinicId));
       if (!isOwned) return res.status(403).json({ message: "Forbidden" });
     }
-    if (req.user.role === "patient") {
+    if (isClinicStaffRole(req.user.role)) {
+      const assigned = req.user.clinicIds ?? [];
+      const isAssigned = assigned.some((id) => id.equals(appointment.clinicId));
+      if (!isAssigned) return res.status(403).json({ message: "Forbidden" });
+    }
+    if (isPatientRole(req.user.role)) {
       if (!appointment.createdByUserId.equals(req.user._id)) {
         return res.status(403).json({ message: "Forbidden" });
       }
@@ -171,12 +207,23 @@ export const updateAppointmentHandler = async (req: Request, res: Response) => {
     const existing = await getAppointmentById(parsedParams.data.id);
     if (!existing) return res.status(404).json({ message: "Appointment not found" });
 
-    if (req.user.role === "clinic") {
+    if (isClinicOwnerRole(req.user.role)) {
       const owned = await getOwnedClinicIds(req.user._id);
       const isOwned = owned.some((id) => id.equals(existing.clinicId));
       if (!isOwned) return res.status(403).json({ message: "Forbidden" });
+      if (parsedBody.data.clinicId) {
+        return res.status(403).json({ message: "Forbidden" });
+      }
     }
-    if (req.user.role === "patient") {
+    if (isClinicStaffRole(req.user.role)) {
+      const assigned = req.user.clinicIds ?? [];
+      const isAssigned = assigned.some((id) => id.equals(existing.clinicId));
+      if (!isAssigned) return res.status(403).json({ message: "Forbidden" });
+      if (parsedBody.data.clinicId) {
+        return res.status(403).json({ message: "Forbidden" });
+      }
+    }
+    if (isPatientRole(req.user.role)) {
       if (!existing.createdByUserId.equals(req.user._id)) {
         return res.status(403).json({ message: "Forbidden" });
       }
@@ -186,6 +233,9 @@ export const updateAppointmentHandler = async (req: Request, res: Response) => {
       if (hasNonStatusUpdates || parsedBody.data.status !== "cancelled") {
         return res.status(403).json({ message: "Forbidden" });
       }
+      if (existing.status !== "scheduled") {
+        return res.status(403).json({ message: "Forbidden" });
+      }
     }
 
     const updates = {
@@ -193,6 +243,7 @@ export const updateAppointmentHandler = async (req: Request, res: Response) => {
       scheduledAt: parsedBody.data.scheduledAt
         ? new Date(parsedBody.data.scheduledAt)
         : undefined,
+      updatedByUserId: req.user._id,
     };
 
     const appointment = await updateAppointment(parsedParams.data.id, updates);
@@ -226,12 +277,17 @@ export const deleteAppointmentHandler = async (req: Request, res: Response) => {
     const appointment = await getAppointmentById(parsed.data.id);
     if (!appointment) return res.status(404).json({ message: "Appointment not found" });
 
-    if (req.user.role === "clinic") {
+    if (isClinicOwnerRole(req.user.role)) {
       const owned = await getOwnedClinicIds(req.user._id);
       const isOwned = owned.some((id) => id.equals(appointment.clinicId));
       if (!isOwned) return res.status(403).json({ message: "Forbidden" });
     }
-    if (req.user.role === "patient") {
+    if (isClinicStaffRole(req.user.role)) {
+      const assigned = req.user.clinicIds ?? [];
+      const isAssigned = assigned.some((id) => id.equals(appointment.clinicId));
+      if (!isAssigned) return res.status(403).json({ message: "Forbidden" });
+    }
+    if (isPatientRole(req.user.role)) {
       return res.status(403).json({ message: "Forbidden" });
     }
 
@@ -249,16 +305,43 @@ export const todayAppointmentsHandler = async (req: Request, res: Response) => {
   try {
     if (!req.user) return res.status(401).json({ message: "Unauthorized" });
 
-    let clinicIds: Types.ObjectId[] | null = null;
-    if (req.user.role === "clinic") {
-      clinicIds = await getOwnedClinicIds(req.user._id);
-    }
+    const clinicIds = await getAccessibleClinicIds(req.user);
 
     const result = await countTodayAppointments(
       clinicIds,
-      req.user.role === "patient" ? req.user._id : undefined
+      isPatientRole(req.user.role) ? req.user._id : undefined
     );
     return res.status(200).json(result);
+  } catch (err) {
+    return res.status(500).json({ message: (err as Error).message });
+  }
+};
+
+export const appointmentSlotsHandler = async (req: Request, res: Response) => {
+  try {
+    if (!req.user) return res.status(401).json({ message: "Unauthorized" });
+
+    const parsed = appointmentSlotsQuerySchema.safeParse(req.query);
+    if (!parsed.success) {
+      return res.status(400).json({
+        message: "Validation error",
+        errors: formatZodError(parsed.error),
+      });
+    }
+
+    if (isClinicOwnerRole(req.user.role)) {
+      const owned = await getOwnedClinicIds(req.user._id);
+      const isOwned = owned.some((id) => id.equals(parsed.data.clinicId));
+      if (!isOwned) return res.status(403).json({ message: "Forbidden" });
+    }
+    if (isClinicStaffRole(req.user.role)) {
+      const assigned = req.user.clinicIds ?? [];
+      const isAssigned = assigned.some((id) => id.equals(parsed.data.clinicId));
+      if (!isAssigned) return res.status(403).json({ message: "Forbidden" });
+    }
+
+    const slots = await getBookedSlotsForDate(parsed.data.clinicId, parsed.data.date);
+    return res.status(200).json({ slots });
   } catch (err) {
     return res.status(500).json({ message: (err as Error).message });
   }

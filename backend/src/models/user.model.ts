@@ -4,7 +4,10 @@ export interface UserDocument extends Document {
   name: string;
   email: string;
   passwordHash?: string;
-  role: "admin" | "clinic" | "patient";
+  role: "admin" | "clinic_owner" | "doctor" | "receptionist" | "patient" | "clinic";
+  clinicIds?: Schema.Types.ObjectId[];
+  createdByUserId?: Schema.Types.ObjectId;
+  updatedByUserId?: Schema.Types.ObjectId;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -16,10 +19,13 @@ const userSchema = new Schema<UserDocument>(
     passwordHash: { type: String, required: true },
     role: {
       type: String,
-      enum: ["admin", "clinic", "patient"],
+      enum: ["admin", "clinic_owner", "doctor", "receptionist", "patient", "clinic"],
       default: "patient",
       required: true,
     },
+    clinicIds: [{ type: Schema.Types.ObjectId, ref: "Clinic" }],
+    createdByUserId: { type: Schema.Types.ObjectId, ref: "User" },
+    updatedByUserId: { type: Schema.Types.ObjectId, ref: "User" },
   },
   { timestamps: true }
 );
@@ -29,6 +35,8 @@ userSchema.set("toJSON", {
   transform: (_doc, ret) => {
     // Remove sensitive fields
     delete ret.passwordHash;
+    delete ret.createdByUserId;
+    delete ret.updatedByUserId;
     return ret;
   },
 });

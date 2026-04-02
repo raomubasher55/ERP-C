@@ -39,3 +39,12 @@ export const appointmentListQuerySchema = z.object({
   dateFrom: z.string().datetime().optional(),
   dateTo: z.string().datetime().optional(),
 });
+
+export const appointmentSlotsQuerySchema = z.object({
+  clinicId: z
+    .string()
+    .refine((val) => Types.ObjectId.isValid(val), { message: "Invalid clinicId" }),
+  date: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, { message: "date must be YYYY-MM-DD" }),
+});

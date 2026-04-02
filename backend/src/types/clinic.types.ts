@@ -1,5 +1,7 @@
 export type ClinicCreateInput = {
   ownerUserId?: string;
+  createdByUserId?: string;
+  updatedByUserId?: string;
   name: string;
   phone: string;
   email?: string;

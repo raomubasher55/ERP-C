@@ -5,6 +5,8 @@ export type AppointmentStatus = "scheduled" | "completed" | "cancelled" | "no_sh
 export interface AppointmentDocument extends Document {
   clinicId: Types.ObjectId;
   createdByUserId: Types.ObjectId;
+  updatedByUserId?: Types.ObjectId;
+  deletedAt?: Date | null;
   patientName: string;
   patientPhone?: string;
   scheduledAt: Date;
@@ -23,6 +25,8 @@ const appointmentSchema = new Schema<AppointmentDocument>(
       required: true,
       index: true,
     },
+    updatedByUserId: { type: Schema.Types.ObjectId, ref: "User", index: true },
+    deletedAt: { type: Date, default: null },
     patientName: { type: String, required: true, trim: true },
     patientPhone: { type: String, trim: true },
     scheduledAt: { type: Date, required: true, index: true },

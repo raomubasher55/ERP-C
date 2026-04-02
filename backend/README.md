@@ -78,24 +78,31 @@ Response `200`:
 }
 ```
 
-## Clinics (Authorization + role required)
+## Clinics (Authorization + permission required)
 Roles allowed:
-- **Read-only**: `admin`, `clinic`, `patient`
-- **Write** (create/update/delete): `clinic`, `admin`
+- **Read-only**: `admin`, `clinic_owner` (`clinic` legacy)
+- **Write** (create/update/delete): `admin`, `clinic_owner` (`clinic` legacy)
 
 Admin behavior:
 - Admin can see all clinics.
 - Admin can assign clinic ownership with `ownerUserId`.
 
 Patient behavior:
-- Patients can **list/get** clinics (read-only).
-- Patients see **active** clinics only.
+- Patients use the public endpoint (`/api/clinics/public`) to see **active** clinics only.
+
+### GET `/api/clinics/public`
+Public list of active clinics (no auth required).
+
+Response `200`:
+```json
+{ "clinics": [ { "...": "..." } ] }
+```
 
 ## Users (admin only)
 
 ### GET `/api/users`
 List users. Optional filters:
-- `role` = `admin | clinic | patient`
+- `role` = `admin | clinic_owner | clinic | doctor | receptionist | patient`
 - `search` = name/email substring
 
 Response `200`:
@@ -106,7 +113,7 @@ Response `200`:
       "_id": "userId",
       "name": "Clinic User",
       "email": "clinic@example.com",
-      "role": "clinic",
+      "role": "clinic_owner",
       "createdAt": "2026-03-25T00:00:00.000Z",
       "updatedAt": "2026-03-25T00:00:00.000Z"
     }
@@ -114,10 +121,40 @@ Response `200`:
 }
 ```
 
-## Appointments (admin + clinic)
+### PATCH `/api/users/:id/role`
+Update a user role (admin only).
+
+Request body:
+```json
+{ "role": "clinic_owner" }
+```
+
+Response `200`:
+```json
+{ "user": { "...": "..." } }
+```
+
+### PATCH `/api/users/:id/clinics`
+Assign clinics to a staff user (admin only). Only needed for `doctor` and `receptionist`.
+
+Request body:
+```json
+{ "clinicIds": ["clinicId1", "clinicId2"] }
+```
+
+Response `200`:
+```json
+{ "user": { "...": "..." } }
+```
+
+## Appointments (Authorization + permission required)
+Roles allowed:
+- **Read**: `admin`, `clinic_owner` (`clinic` legacy), `doctor`, `receptionist`, `patient`
+- **Manage** (create/update/delete): `admin`, `clinic_owner` (`clinic` legacy), `doctor`, `receptionist`
+- **Book / Cancel**: `patient`
 
 ### POST `/api/appointments`
-Create an appointment (clinic or admin).
+Create an appointment (clinic/admin/staff) or book as patient.
 
 Request body:
 ```json
@@ -150,7 +187,7 @@ Response `201`:
 ```
 
 ### GET `/api/appointments`
-List appointments (admin sees all, clinic sees own clinics).
+List appointments (admin sees all, clinic sees own clinics, patient sees own).
 
 Query params:
 - `page`, `limit`
@@ -180,7 +217,7 @@ Update appointment fields.
 Delete appointment.
 
 ### GET `/api/appointments/today`
-Count today’s appointments (status: scheduled + completed).
+Count today's appointments (status: scheduled + completed).
 
 Response `200`:
 ```json
@@ -189,6 +226,18 @@ Response `200`:
   "start": "2026-03-27T00:00:00.000Z",
   "end": "2026-03-27T23:59:59.999Z"
 }
+```
+
+### GET `/api/appointments/slots`
+Get booked slots for a clinic on a date (no patient details).
+
+Query params:
+- `clinicId` (required)
+- `date` (YYYY-MM-DD)
+
+Response `200`:
+```json
+{ "slots": ["2026-04-01T09:00:00.000Z", "2026-04-01T09:15:00.000Z"] }
 ```
 
 ### POST `/api/clinics`

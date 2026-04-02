@@ -1,9 +1,18 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Badge, Button, Card, Heading, Text } from "@radix-ui/themes";
+import {
+  Badge,
+  Button,
+  Card,
+  Dialog,
+  Heading,
+  Select,
+  Text,
+  TextField,
+} from "@radix-ui/themes";
 import { Link } from "react-router-dom";
 import { api } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
-import type { Clinic } from "../types/api";
+import type { Clinic, User } from "../types/api";
 import ClinicModal from "../components/ClinicModal";
 import TopNav from "../components/TopNav";
 
@@ -18,6 +27,14 @@ const AdminDashboard = () => {
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(
     null
   );
+  const [users, setUsers] = useState<User[]>([]);
+  const [usersLoading, setUsersLoading] = useState(false);
+  const [usersError, setUsersError] = useState<string | null>(null);
+  const [searchInput, setSearchInput] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [roleFilter, setRoleFilter] = useState<"all" | User["role"]>("all");
+  const [assigningUser, setAssigningUser] = useState<User | null>(null);
+  const [selectedClinics, setSelectedClinics] = useState<string[]>([]);
 
   const loadClinics = useCallback(async () => {
     if (!token) return;
@@ -63,6 +80,87 @@ const AdminDashboard = () => {
     const active = clinics.filter((c) => c.isActive).length;
     return { active, todayAppointments: todayCount, total: clinics.length };
   }, [clinics, todayCount]);
+
+  const loadUsers = useCallback(async () => {
+    if (!token) return;
+    setUsersLoading(true);
+    setUsersError(null);
+    try {
+      const params = new URLSearchParams();
+      if (debouncedSearch.trim()) params.set("search", debouncedSearch.trim());
+      if (roleFilter !== "all") params.set("role", roleFilter);
+      const path = params.toString() ? `/api/users?${params}` : "/api/users";
+      const res = await api.get<{ users: User[] }>(path, token);
+      setUsers(res.users);
+    } catch (err) {
+      const message = (err as { message?: string })?.message || "Unable to load users";
+      setUsersError(message);
+    } finally {
+      setUsersLoading(false);
+    }
+  }, [token, debouncedSearch, roleFilter]);
+
+  useEffect(() => {
+    if (token) {
+      loadUsers();
+    }
+  }, [token, loadUsers]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchInput);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchInput]);
+
+  const updateUserRole = async (userId: string, role: User["role"]) => {
+    if (!token) return;
+    try {
+      const res = await api.patch<{ user: User }>(
+        `/api/users/${userId}/role`,
+        { role },
+        token
+      );
+      setUsers((prev) => prev.map((u) => (u._id === userId ? res.user : u)));
+      setToast({ message: "User role updated", type: "success" });
+    } catch (err) {
+      const message = (err as { message?: string })?.message || "Unable to update role";
+      setToast({ message, type: "error" });
+    }
+  };
+
+  const updateUserClinics = async (userId: string, clinicIds: string[]) => {
+    if (!token) return;
+    try {
+      const res = await api.patch<{ user: User }>(
+        `/api/users/${userId}/clinics`,
+        { clinicIds },
+        token
+      );
+      setUsers((prev) => prev.map((u) => (u._id === userId ? res.user : u)));
+      setToast({ message: "Clinic access updated", type: "success" });
+    } catch (err) {
+      const message = (err as { message?: string })?.message || "Unable to update clinics";
+      setToast({ message, type: "error" });
+    }
+  };
+
+  const openAssignModal = (target: User) => {
+    setAssigningUser(target);
+    setSelectedClinics(target.clinicIds ?? []);
+  };
+
+  const toggleClinicSelection = (clinicId: string) => {
+    setSelectedClinics((prev) =>
+      prev.includes(clinicId) ? prev.filter((id) => id !== clinicId) : [...prev, clinicId]
+    );
+  };
+
+  const saveAssignedClinics = async () => {
+    if (!assigningUser) return;
+    await updateUserClinics(assigningUser._id, selectedClinics);
+    setAssigningUser(null);
+  };
 
   return (
     <div className="min-h-screen bg-app-gradient text-slate-950">
@@ -231,7 +329,202 @@ const AdminDashboard = () => {
               ))}
           </div>
         </section>
+
+        <section className="mt-12">
+          <div className="flex items-center justify-between">
+            <Heading size="6" className="font-display">
+              Users & Roles
+            </Heading>
+            <Text size="2" className="text-slate-500">
+              Showing {users.length} users
+            </Text>
+          </div>
+
+          <div className="mt-4 flex flex-col gap-3 md:flex-row md:items-center">
+            <div className="md:w-[320px]">
+              <TextField.Root
+                placeholder="Search by name or email"
+                value={searchInput}
+                onChange={(event) => setSearchInput(event.target.value)}
+              />
+            </div>
+            <div className="md:w-[200px]">
+              <Select.Root
+                value={roleFilter}
+                onValueChange={(value) => setRoleFilter(value as typeof roleFilter)}
+              >
+                <Select.Trigger />
+                <Select.Content>
+                  <Select.Item value="all">All roles</Select.Item>
+                  <Select.Item value="admin">Admin</Select.Item>
+                  <Select.Item value="clinic_owner">Clinic owner</Select.Item>
+                  <Select.Item value="doctor">Doctor</Select.Item>
+                  <Select.Item value="receptionist">Receptionist</Select.Item>
+                  <Select.Item value="patient">Patient</Select.Item>
+                  <Select.Item value="clinic">Clinic (legacy)</Select.Item>
+                </Select.Content>
+              </Select.Root>
+            </div>
+          </div>
+
+          <div className="mt-4 grid gap-3">
+            {usersLoading ? (
+              <Card className="border border-slate-200 bg-white/70 p-4">
+                <Text size="2" className="text-slate-500">
+                  Loading users...
+                </Text>
+              </Card>
+            ) : null}
+
+            {usersError ? (
+              <Card className="border border-red-200 bg-red-50 p-4">
+                <Text size="2" className="text-red-600">
+                  {usersError}
+                </Text>
+              </Card>
+            ) : null}
+
+            {!usersLoading && !usersError && users.length === 0 ? (
+              <Card className="border border-slate-200 bg-white/70 p-4">
+                <Text size="2" className="text-slate-500">
+                  No users found.
+                </Text>
+              </Card>
+            ) : null}
+
+            {!usersLoading &&
+              !usersError &&
+              users.map((u) => {
+                const isSelf = user?._id === u._id;
+                const canAssignClinics = u.role === "doctor" || u.role === "receptionist";
+                return (
+                  <Card
+                    key={u._id}
+                    className="flex flex-col gap-3 border border-slate-200 bg-white/90 p-4 shadow-[0_12px_30px_rgba(15,118,110,0.08)] md:flex-row md:items-center md:justify-between"
+                  >
+                    <div>
+                      <Text size="3" className="font-semibold text-slate-900">
+                        {u.name}
+                      </Text>
+                      <Text size="2" className="text-slate-500">
+                        {u.email}
+                      </Text>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      {isSelf ? (
+                        <Badge variant="soft" color="green">
+                          {u.role}
+                        </Badge>
+                      ) : (
+                        <Select.Root
+                          value={u.role}
+                          onValueChange={(value) =>
+                            updateUserRole(u._id, value as User["role"])
+                          }
+                        >
+                          <Select.Trigger />
+                          <Select.Content>
+                            <Select.Item value="admin">Admin</Select.Item>
+                            <Select.Item value="clinic_owner">Clinic owner</Select.Item>
+                            <Select.Item value="doctor">Doctor</Select.Item>
+                            <Select.Item value="receptionist">Receptionist</Select.Item>
+                            <Select.Item value="patient">Patient</Select.Item>
+                          </Select.Content>
+                        </Select.Root>
+                      )}
+                      {isSelf ? (
+                        <Text size="1" className="text-slate-400">
+                          You
+                        </Text>
+                      ) : null}
+                    </div>
+                    {canAssignClinics ? (
+                      <Button
+                        size="1"
+                        variant="soft"
+                        onClick={() => openAssignModal(u)}
+                      >
+                        Assign clinics
+                      </Button>
+                    ) : null}
+                  </Card>
+                );
+              })}
+          </div>
+        </section>
       </div>
+
+      <Dialog.Root
+        open={!!assigningUser}
+        onOpenChange={(open) => {
+          if (!open) setAssigningUser(null);
+        }}
+      >
+        <Dialog.Content className="clinic-dialog max-h-[80vh] w-[min(92vw,680px)] overflow-y-auto border border-slate-200 bg-white/95 p-6 shadow-[0_20px_80px_rgba(15,118,110,0.2)]">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <Dialog.Title>
+                <Heading size="6" className="font-display">
+                  Assign clinics
+                </Heading>
+              </Dialog.Title>
+              <Dialog.Description>
+                <Text size="2" className="text-slate-500">
+                  {assigningUser ? `Staff member: ${assigningUser.name}` : ""}
+                </Text>
+              </Dialog.Description>
+            </div>
+            <Button variant="soft" onClick={() => setAssigningUser(null)}>
+              Close
+            </Button>
+          </div>
+
+          <div className="mt-6 grid gap-3">
+            {clinics.length === 0 ? (
+              <Card className="border border-slate-200 bg-white/70 p-4">
+                <Text size="2" className="text-slate-500">
+                  No clinics available to assign.
+                </Text>
+              </Card>
+            ) : (
+              clinics.map((clinic) => {
+                const isAssigned = selectedClinics.includes(clinic._id);
+                return (
+                  <button
+                    key={clinic._id}
+                    type="button"
+                    onClick={() => toggleClinicSelection(clinic._id)}
+                    className={`flex items-center justify-between rounded-xl border px-4 py-3 text-left ${
+                      isAssigned
+                        ? "border-emerald-500 bg-emerald-50 text-emerald-700"
+                        : "border-slate-200 bg-white text-slate-700"
+                    }`}
+                  >
+                    <div>
+                      <div className="text-sm font-semibold">{clinic.name}</div>
+                      <div className="text-xs text-slate-500">
+                        {clinic.city} • {clinic.phone}
+                      </div>
+                    </div>
+                    <Badge variant="soft" color={isAssigned ? "green" : "gray"}>
+                      {isAssigned ? "Assigned" : "Not assigned"}
+                    </Badge>
+                  </button>
+                );
+              })
+            )}
+          </div>
+
+          <div className="mt-6 flex items-center justify-end gap-3">
+            <Button variant="soft" onClick={() => setAssigningUser(null)}>
+              Cancel
+            </Button>
+            <Button onClick={saveAssignedClinics} disabled={!assigningUser}>
+              Save assignments
+            </Button>
+          </div>
+        </Dialog.Content>
+      </Dialog.Root>
     </div>
   );
 };

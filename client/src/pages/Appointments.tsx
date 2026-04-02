@@ -1,6 +1,5 @@
 ﻿import { useCallback, useEffect, useMemo, useState, type ChangeEvent } from "react";
 import { Badge, Button, Card, Dialog, Heading, Select, Text, TextField } from "@radix-ui/themes";
-import { Link } from "react-router-dom";
 import { api } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
 import type { Appointment, AppointmentStatus, Clinic } from "../types/api";
@@ -354,9 +353,9 @@ const Appointments = () => {
           </div>
           {user?.role === "patient" ? (
             <div className="flex items-center gap-3">
-              <Button asChild size="3">
-                <Link to="/appointments/new">New appointment</Link>
-              </Button>
+              <Text size="2" className="text-slate-500">
+                Use the patient dashboard to request a new appointment.
+              </Text>
             </div>
           ) : null}
         </header>

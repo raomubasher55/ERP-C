@@ -7,7 +7,7 @@ export type AuthPayload = {
   sub: string;
   email: string;
   name: string;
-  role: "admin" | "clinic" | "patient";
+  role: "admin" | "clinic_owner" | "doctor" | "receptionist" | "patient" | "clinic";
 };
 
 export const signToken = (payload: AuthPayload) =>
