@@ -9,6 +9,7 @@ type AuthState = {
   isLoading: boolean;
   login: (email: string, password: string) => Promise<void>;
   register: (name: string, email: string, password: string) => Promise<void>;
+  refreshUser: () => Promise<void>;
   logout: () => void;
 };
 
@@ -44,6 +45,10 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     loadMe(token);
   }, [loadMe, token]);
 
+  const refreshUser = useCallback(async () => {
+    await loadMe(token);
+  }, [loadMe, token]);
+
   const login = useCallback(async (email: string, password: string) => {
     const res = await api.post<{ token: string; user: User }>("/api/auth/login", {
       email,
@@ -72,8 +77,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   }, []);
 
   const value = useMemo(
-    () => ({ user, token, isLoading, login, register, logout }),
-    [user, token, isLoading, login, register, logout]
+    () => ({ user, token, isLoading, login, register, refreshUser, logout }),
+    [user, token, isLoading, login, register, refreshUser, logout]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

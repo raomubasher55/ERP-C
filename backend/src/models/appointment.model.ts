@@ -1,6 +1,20 @@
 import { Schema, model, Document, Model, Types } from "mongoose";
 
-export type AppointmentStatus = "scheduled" | "completed" | "cancelled" | "no_show";
+export type AppointmentStatus =
+  | "pending"
+  | "confirmed"
+  | "scheduled"
+  | "completed"
+  | "cancelled"
+  | "no_show";
+
+export interface AppointmentPrescription {
+  name: string;
+  dosage?: string;
+  frequency?: string;
+  duration?: string;
+  notes?: string;
+}
 
 export interface AppointmentDocument extends Document {
   clinicId: Types.ObjectId;
@@ -12,9 +26,21 @@ export interface AppointmentDocument extends Document {
   scheduledAt: Date;
   status: AppointmentStatus;
   notes?: string;
+  prescriptions: AppointmentPrescription[];
   createdAt: Date;
   updatedAt: Date;
 }
+
+const appointmentPrescriptionSchema = new Schema<AppointmentPrescription>(
+  {
+    name: { type: String, required: true, trim: true },
+    dosage: { type: String, trim: true },
+    frequency: { type: String, trim: true },
+    duration: { type: String, trim: true },
+    notes: { type: String, trim: true },
+  },
+  { _id: false }
+);
 
 const appointmentSchema = new Schema<AppointmentDocument>(
   {
@@ -32,10 +58,11 @@ const appointmentSchema = new Schema<AppointmentDocument>(
     scheduledAt: { type: Date, required: true, index: true },
     status: {
       type: String,
-      enum: ["scheduled", "completed", "cancelled", "no_show"],
-      default: "scheduled",
+      enum: ["pending", "confirmed", "scheduled", "completed", "cancelled", "no_show"],
+      default: "pending",
     },
     notes: { type: String, trim: true },
+    prescriptions: { type: [appointmentPrescriptionSchema], default: [] },
   },
   { timestamps: true }
 );

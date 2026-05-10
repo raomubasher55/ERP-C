@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Button, Dialog, Heading, Text, TextField } from "@radix-ui/themes";
+import { Button, Dialog, Heading, Select, Text, TextField } from "@radix-ui/themes";
 import { api, type ApiError } from "../lib/api";
 import type { Appointment, Clinic } from "../types/api";
 
@@ -7,6 +7,7 @@ type AppointmentModalProps = {
   open: boolean;
   token: string;
   clinic: Clinic | null;
+  clinics?: Clinic[];
   patientName?: string;
   onClose: () => void;
   onBooked: (appointment: Appointment) => void;
@@ -17,11 +18,19 @@ const AppointmentModal = ({
   open,
   token,
   clinic,
+  clinics,
   patientName,
   onClose,
   onBooked,
   onError,
 }: AppointmentModalProps) => {
+  const availableClinics = useMemo(
+    () => (clinics && clinics.length > 0 ? clinics : clinic ? [clinic] : []),
+    [clinic, clinics]
+  );
+  const [selectedClinicId, setSelectedClinicId] = useState(
+    clinic?._id ?? clinics?.[0]?._id ?? ""
+  );
   const [name, setName] = useState(patientName ?? "");
   const [phone, setPhone] = useState("");
   const [date, setDate] = useState("");
@@ -32,8 +41,14 @@ const AppointmentModal = ({
   const [bookedSlots, setBookedSlots] = useState<string[]>([]);
   const [slotsLoading, setSlotsLoading] = useState(false);
 
+  const activeClinic = useMemo(
+    () => availableClinics.find((entry) => entry._id === selectedClinicId) ?? null,
+    [availableClinics, selectedClinicId]
+  );
+
   useEffect(() => {
     if (open) {
+      setSelectedClinicId(clinic?._id ?? clinics?.[0]?._id ?? "");
       setName(patientName ?? "");
       setPhone("");
       setDate("");
@@ -42,15 +57,15 @@ const AppointmentModal = ({
       setError(null);
       setBookedSlots([]);
     }
-  }, [open, patientName]);
+  }, [clinic?._id, clinics, open, patientName]);
 
   useEffect(() => {
     const loadSlots = async () => {
-      if (!open || !clinic || !date) return;
+      if (!open || !activeClinic || !date) return;
       setSlotsLoading(true);
       try {
         const res = await api.get<{ slots: string[] }>(
-          `/api/appointments/slots?clinicId=${clinic._id}&date=${date}`,
+          `/api/appointments/slots?clinicId=${activeClinic._id}&date=${date}`,
           token
         );
         setBookedSlots(res.slots);
@@ -61,7 +76,7 @@ const AppointmentModal = ({
       }
     };
     loadSlots();
-  }, [open, clinic, date, token]);
+  }, [open, activeClinic, date, token]);
 
   const scheduledAt = useMemo(() => {
     if (!date || !time) return "";
@@ -70,19 +85,19 @@ const AppointmentModal = ({
   }, [date, time]);
 
   const timeSlots = useMemo(() => {
-    if (!clinic || !date) return [];
+    if (!activeClinic || !date) return [];
     const parseTime = (value?: string) => {
       if (!value) return null;
       const [h, m] = value.split(":").map((v) => Number(v));
       if (Number.isNaN(h) || Number.isNaN(m)) return null;
       return h * 60 + m;
     };
-    const startMinutes = parseTime(clinic.startTime);
-    const endMinutes = parseTime(clinic.endTime);
+    const startMinutes = parseTime(activeClinic.startTime);
+    const endMinutes = parseTime(activeClinic.endTime);
     if (startMinutes === null || endMinutes === null) return [];
-    const breakStart = parseTime(clinic.breakTime?.start);
-    const breakEnd = parseTime(clinic.breakTime?.end);
-    const duration = Math.max(clinic.slotDuration ?? 15, 5);
+    const breakStart = parseTime(activeClinic.breakTime?.start);
+    const breakEnd = parseTime(activeClinic.breakTime?.end);
+    const duration = Math.max(activeClinic.slotDuration ?? 15, 5);
 
     const bookedSet = new Set(
       bookedSlots.map((iso) => {
@@ -111,12 +126,12 @@ const AppointmentModal = ({
       }
     }
     return slots;
-  }, [clinic, date, bookedSlots]);
+  }, [activeClinic, date, bookedSlots]);
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
     setError(null);
-    if (!clinic) return;
+    if (!activeClinic) return;
     if (!name.trim() || !date || !time) {
       setError("Patient name, date, and time are required.");
       return;
@@ -135,7 +150,7 @@ const AppointmentModal = ({
       const res = await api.post<{ appointment: Appointment }>(
         "/api/appointments",
         {
-          clinicId: clinic._id,
+          clinicId: activeClinic._id,
           patientName: name.trim(),
           patientPhone: phone.trim() || undefined,
           scheduledAt,
@@ -160,7 +175,7 @@ const AppointmentModal = ({
         if (!nextOpen) onClose();
       }}
     >
-      <Dialog.Content className="max-h-[90vh] w-[min(92vw,520px)] overflow-y-auto border border-slate-200 bg-white/95 p-6 shadow-[0_20px_80px_rgba(15,118,110,0.2)]">
+      <Dialog.Content className="app-scrollbar max-h-[90vh] w-[min(92vw,520px)] overflow-y-auto border border-slate-200 bg-white/95 p-6 shadow-[0_20px_80px_rgba(15,118,110,0.2)]">
         <div className="flex items-center justify-between gap-4">
           <div>
             <Dialog.Title>
@@ -170,7 +185,7 @@ const AppointmentModal = ({
             </Dialog.Title>
             <Dialog.Description>
               <Text size="2" className="text-slate-500">
-                {clinic ? `Clinic: ${clinic.name}` : "Select a clinic"}
+                {activeClinic ? `Clinic: ${activeClinic.name}` : "Select a clinic"}
               </Text>
             </Dialog.Description>
           </div>
@@ -180,6 +195,22 @@ const AppointmentModal = ({
         </div>
 
         <form className="mt-6 space-y-4" onSubmit={submit}>
+          {availableClinics.length > 1 ? (
+            <label className="block text-sm text-slate-600">
+              Clinic
+              <Select.Root value={selectedClinicId} onValueChange={setSelectedClinicId}>
+                <Select.Trigger className="mt-2" />
+                <Select.Content>
+                  {availableClinics.map((entry) => (
+                    <Select.Item key={entry._id} value={entry._id}>
+                      {entry.name}
+                    </Select.Item>
+                  ))}
+                </Select.Content>
+              </Select.Root>
+            </label>
+          ) : null}
+
           <label className="block text-sm text-slate-600">
             Patient name
             <TextField.Root
@@ -276,7 +307,7 @@ const AppointmentModal = ({
             <Button variant="soft" type="button" onClick={onClose} disabled={submitting}>
               Cancel
             </Button>
-            <Button type="submit" disabled={submitting || !clinic}>
+            <Button type="submit" disabled={submitting || !activeClinic}>
               {submitting ? "Booking..." : "Book appointment"}
             </Button>
           </div>

@@ -13,15 +13,57 @@ export type Permission =
   | "appointments.manage"
   | "appointments.book"
   | "appointments.cancel"
+  | "billing.read"
+  | "billing.manage"
+  | "inventory.read"
+  | "inventory.manage"
+  | "reports.read"
   | "users.manage";
 
-const rolePermissions: Record<Role, Permission[] | ["*"]> = {
+const rolePermissions: Record<Role, ReadonlyArray<Permission | "*">> = {
   admin: ["*"],
-  clinic_owner: ["clinics.read", "clinics.manage", "appointments.read", "appointments.manage"],
-  doctor: ["clinics.read", "appointments.read", "appointments.manage"],
-  receptionist: ["clinics.read", "appointments.read", "appointments.manage"],
-  patient: ["appointments.read", "appointments.book", "appointments.cancel"],
-  clinic: ["clinics.read", "clinics.manage", "appointments.read", "appointments.manage"],
+  clinic_owner: [
+    "clinics.read",
+    "clinics.manage",
+    "appointments.read",
+    "appointments.manage",
+    "billing.read",
+    "billing.manage",
+    "inventory.read",
+    "inventory.manage",
+    "reports.read",
+  ],
+  doctor: [
+    "clinics.read",
+    "appointments.read",
+    "appointments.manage",
+    "billing.read",
+    "billing.manage",
+    "inventory.read",
+    "reports.read",
+  ],
+  receptionist: [
+    "clinics.read",
+    "appointments.read",
+    "appointments.manage",
+    "billing.read",
+    "billing.manage",
+    "inventory.read",
+    "inventory.manage",
+    "reports.read",
+  ],
+  patient: ["appointments.read", "appointments.book", "appointments.cancel", "billing.read"],
+  clinic: [
+    "clinics.read",
+    "clinics.manage",
+    "appointments.read",
+    "appointments.manage",
+    "billing.read",
+    "billing.manage",
+    "inventory.read",
+    "inventory.manage",
+    "reports.read",
+  ],
 };
 
 export const normalizeRole = (role: Role) =>

@@ -6,6 +6,9 @@ import authRoutes from "./routes/auth.routes";
 import clinicRoutes from "./routes/clinic.routes";
 import userRoutes from "./routes/user.routes";
 import appointmentRoutes from "./routes/appointment.routes";
+import billingRoutes from "./routes/billing.routes";
+import inventoryRoutes from "./routes/inventory.routes";
+import reportsRoutes from "./routes/reports.routes";
 import { connectDb } from "./services/db.service";
 
 dotenv.config();
@@ -21,6 +24,9 @@ app.use("/api/auth", authRoutes);
 app.use("/api/clinics", clinicRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/appointments", appointmentRoutes);
+app.use("/api/billing", billingRoutes);
+app.use("/api/inventory", inventoryRoutes);
+app.use("/api/reports", reportsRoutes);
 
 app.get("/health", (_req, res) => {
   res.status(200).json({

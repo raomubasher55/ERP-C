@@ -5,7 +5,9 @@ import { api } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
 import type { Appointment, Clinic } from "../types/api";
 import ClinicModal from "../components/ClinicModal";
+import ReportsSummaryCards from "../components/ReportsSummaryCards";
 import TopNav from "../components/TopNav";
+import { normalizeAppointmentStatus } from "../lib/appointment";
 
 const ClinicDashboard = () => {
   const { user, token } = useAuth();
@@ -35,48 +37,62 @@ const ClinicDashboard = () => {
     }
   }, [token]);
 
-  useEffect(() => {
-    if (token) {
-      loadClinics();
+  const loadToday = useCallback(async () => {
+    if (!token) return;
+    try {
+      const res = await api.get<{ total: number }>("/api/appointments/today", token);
+      setTodayCount(res.total);
+    } catch {
+      setTodayCount(0);
     }
-  }, [token, loadClinics]);
-
-  useEffect(() => {
-    const loadToday = async () => {
-      if (!token) return;
-      try {
-        const res = await api.get<{ total: number }>("/api/appointments/today", token);
-        setTodayCount(res.total);
-      } catch {
-        setTodayCount(0);
-      }
-    };
-    loadToday();
-  }, [token, loadClinics]);
-
-  useEffect(() => {
-    const loadAppointments = async () => {
-      if (!token) return;
-      try {
-        const start = new Date();
-        start.setHours(0, 0, 0, 0);
-        const end = new Date();
-        end.setHours(23, 59, 59, 999);
-        const query = new URLSearchParams({
-          dateFrom: start.toISOString(),
-          dateTo: end.toISOString(),
-        }).toString();
-        const res = await api.get<{ appointments: Appointment[] }>(
-          `/api/appointments?${query}`,
-          token
-        );
-        setAppointments(res.appointments);
-      } catch {
-        setAppointments([]);
-      }
-    };
-    loadAppointments();
   }, [token]);
+
+  const loadAppointments = useCallback(async () => {
+    if (!token) return;
+    try {
+      const start = new Date();
+      start.setHours(0, 0, 0, 0);
+      const end = new Date();
+      end.setHours(23, 59, 59, 999);
+      const query = new URLSearchParams({
+        dateFrom: start.toISOString(),
+        dateTo: end.toISOString(),
+      }).toString();
+      const res = await api.get<{ appointments: Appointment[] }>(
+        `/api/appointments?${query}`,
+        token
+      );
+      setAppointments(res.appointments);
+    } catch {
+      setAppointments([]);
+    }
+  }, [token]);
+
+  const refreshDashboard = useCallback(async () => {
+    if (!token) return;
+    await Promise.all([loadClinics(), loadToday(), loadAppointments()]);
+  }, [token, loadAppointments, loadClinics, loadToday]);
+
+  useEffect(() => {
+    if (!token) return;
+
+    refreshDashboard();
+
+    const interval = window.setInterval(() => {
+      refreshDashboard();
+    }, 15000);
+
+    const onFocus = () => {
+      refreshDashboard();
+    };
+
+    window.addEventListener("focus", onFocus);
+
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener("focus", onFocus);
+    };
+  }, [token, refreshDashboard]);
 
   useEffect(() => {
     if (!toast) return;
@@ -117,7 +133,8 @@ const ClinicDashboard = () => {
 
     const booked = new Set<number>();
     (appointmentsByClinic.get(clinic._id) ?? []).forEach((appt) => {
-      if (!["scheduled", "completed"].includes(appt.status)) return;
+      const normalized = normalizeAppointmentStatus(appt.status);
+      if (!["pending", "confirmed", "completed"].includes(normalized)) return;
       const date = new Date(appt.scheduledAt);
       const minutes = date.getHours() * 60 + date.getMinutes();
       booked.add(minutes);
@@ -183,7 +200,7 @@ const ClinicDashboard = () => {
               setIsModalOpen(false);
               setToast({ message: "Clinic created", type: "success" });
             }
-            loadClinics();
+            refreshDashboard();
           }}
           onError={(message) => setToast({ message, type: "error" })}
         />
@@ -205,6 +222,12 @@ const ClinicDashboard = () => {
           <div className="flex items-center gap-3">
             <Button size="3" variant="solid" onClick={() => setIsModalOpen(true)}>
               New Clinic
+            </Button>
+            <Button asChild size="3" variant="soft">
+              <Link to="/inventory">Inventory</Link>
+            </Button>
+            <Button asChild size="3" variant="soft">
+              <Link to="/billing">Billing</Link>
             </Button>
             <Button asChild size="3" variant="soft">
               <Link to="/appointments">Appointments</Link>
@@ -232,6 +255,8 @@ const ClinicDashboard = () => {
           ))}
         </section>
 
+        {token ? <ReportsSummaryCards token={token} preset="7d" title="Performance snapshot" /> : null}
+
         <section className="mt-10">
           <div className="flex items-center justify-between">
             <Heading size="6" className="font-display">
@@ -242,7 +267,8 @@ const ClinicDashboard = () => {
             </Text>
           </div>
 
-          <div className="mt-4 grid gap-4 md:grid-cols-2">
+          <div className="app-scrollbar mt-4 max-h-[42rem] overflow-y-auto pr-2">
+            <div className="grid gap-4 md:grid-cols-2">
             {loading ? (
               <Card className="border border-slate-200 bg-white/70 p-6">
                 <Text size="2" className="text-slate-500">
@@ -338,6 +364,7 @@ const ClinicDashboard = () => {
                   </div>
                 </Card>
               ))}
+            </div>
           </div>
         </section>
       </div>

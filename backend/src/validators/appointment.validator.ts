@@ -20,11 +20,23 @@ export const appointmentCreateSchema = z.object({
   patientName: z.string().min(1, "patientName is required"),
   patientPhone: z.string().optional(),
   scheduledAt: z.string().datetime({ message: "scheduledAt must be ISO datetime" }),
-  status: z.enum(["scheduled", "completed", "cancelled", "no_show"]).optional(),
+  status: z.enum(["pending", "confirmed", "scheduled", "completed", "cancelled", "no_show"]).optional(),
   notes: z.string().optional(),
 });
 
 export const appointmentUpdateSchema = appointmentCreateSchema.partial();
+
+export const appointmentPrescriptionLineSchema = z.object({
+  name: z.string().trim().min(1, "name is required").max(120),
+  dosage: z.string().trim().max(120).optional(),
+  frequency: z.string().trim().max(120).optional(),
+  duration: z.string().trim().max(120).optional(),
+  notes: z.string().trim().max(500).optional(),
+});
+
+export const appointmentPrescriptionUpdateSchema = z.object({
+  prescriptions: z.array(appointmentPrescriptionLineSchema).max(50).default([]),
+});
 
 export const appointmentListQuerySchema = z.object({
   page: numberFromString(z.number().int().min(1)).default(1),
@@ -35,7 +47,7 @@ export const appointmentListQuerySchema = z.object({
     .string()
     .refine((val) => Types.ObjectId.isValid(val), { message: "Invalid clinicId" })
     .optional(),
-  status: z.enum(["scheduled", "completed", "cancelled", "no_show"]).optional(),
+  status: z.enum(["pending", "confirmed", "scheduled", "completed", "cancelled", "no_show"]).optional(),
   dateFrom: z.string().datetime().optional(),
   dateTo: z.string().datetime().optional(),
 });

@@ -3,15 +3,18 @@ import { Badge, Button, Card, Dialog, Heading, Select, Text, TextField } from "@
 import { api } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
 import type { Appointment, AppointmentStatus, Clinic } from "../types/api";
+import AppointmentModal from "../components/AppointmentModal";
 import TopNav from "../components/TopNav";
+import ReportsSummaryCards from "../components/ReportsSummaryCards";
 import { CalendarSlot } from "../components/FieldIcons";
-
-const statusOptions: { value: AppointmentStatus; label: string }[] = [
-  { value: "scheduled", label: "Scheduled" },
-  { value: "completed", label: "Completed" },
-  { value: "cancelled", label: "Cancelled" },
-  { value: "no_show", label: "No show" },
-];
+import { Link } from "react-router-dom";
+import {
+  appointmentStatusOptions,
+  formatAppointmentStatusLabel,
+  getAppointmentStatusBadgeColor,
+  isPatientCancelableStatus,
+  normalizeAppointmentStatus,
+} from "../lib/appointment";
 
 const formatDateTime = (iso: string) =>
   new Date(iso).toLocaleString(undefined, {
@@ -180,7 +183,7 @@ const AppointmentEditModal = ({
               >
                 <Select.Trigger />
                 <Select.Content>
-                  {statusOptions.map((option) => (
+                  {appointmentStatusOptions.map((option) => (
                     <Select.Item key={option.value} value={option.value}>
                       {option.label}
                     </Select.Item>
@@ -226,7 +229,11 @@ const Appointments = () => {
   const [clinics, setClinics] = useState<Clinic[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(
+    null
+  );
   const [editing, setEditing] = useState<Appointment | null>(null);
+  const [isBookingOpen, setIsBookingOpen] = useState(false);
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(10);
   const [total, setTotal] = useState(0);
@@ -297,6 +304,12 @@ const Appointments = () => {
     }
   }, [token, loadAppointments, loadClinics]);
 
+  useEffect(() => {
+    if (!toast) return;
+    const timer = setTimeout(() => setToast(null), 3000);
+    return () => clearTimeout(timer);
+  }, [toast]);
+
   const updateStatus = async (appointment: Appointment, status: AppointmentStatus) => {
     if (!token) return;
     try {
@@ -312,16 +325,20 @@ const Appointments = () => {
     }
   };
 
-  const statusBadgeColor = (status: AppointmentStatus) => {
-    if (status === "completed") return "green";
-    if (status === "cancelled") return "red";
-    if (status === "no_show") return "gray";
-    return "blue";
-  };
-
   return (
     <div className="min-h-screen bg-app-gradient text-slate-950">
       <TopNav />
+      {toast ? (
+        <div
+          className={`fixed right-6 top-6 z-50 rounded-2xl border px-4 py-3 text-sm shadow-lg ${
+            toast.type === "success"
+              ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+              : "border-red-200 bg-red-50 text-red-600"
+          }`}
+        >
+          {toast.message}
+        </div>
+      ) : null}
       {token && user && user.role !== "patient" ? (
         <AppointmentEditModal
           open={!!editing}
@@ -333,6 +350,21 @@ const Appointments = () => {
             setEditing(null);
             loadAppointments();
           }}
+        />
+      ) : null}
+      {token && user && user.role !== "patient" ? (
+        <AppointmentModal
+          open={isBookingOpen}
+          token={token}
+          clinic={clinics[0] ?? null}
+          clinics={clinics}
+          onClose={() => setIsBookingOpen(false)}
+          onBooked={() => {
+            setToast({ message: "Appointment created", type: "success" });
+            setIsBookingOpen(false);
+            loadAppointments();
+          }}
+          onError={(message) => setToast({ message, type: "error" })}
         />
       ) : null}
 
@@ -348,7 +380,7 @@ const Appointments = () => {
             <Text size="3" className="text-slate-500">
               {user?.role === "patient"
                 ? "Review your bookings and cancel when needed."
-                : "Review and update scheduled appointments."}
+                : "Review and update appointment workflow."}
             </Text>
           </div>
           {user?.role === "patient" ? (
@@ -357,8 +389,24 @@ const Appointments = () => {
                 Use the patient dashboard to request a new appointment.
               </Text>
             </div>
-          ) : null}
+          ) : (
+            <div className="flex items-center gap-3">
+              <Button onClick={() => setIsBookingOpen(true)} disabled={clinics.length === 0}>
+                New appointment
+              </Button>
+              <Button asChild variant="soft">
+                <Link to="/inventory">Inventory</Link>
+              </Button>
+              <Button asChild variant="soft">
+                <Link to="/billing">Billing</Link>
+              </Button>
+            </div>
+          )}
         </header>
+
+        {token && user?.role !== "patient" ? (
+          <ReportsSummaryCards token={token} preset="7d" title="Analytics snapshot" />
+        ) : null}
 
         <section className="mt-8 grid gap-4 rounded-2xl border border-slate-200 bg-white/70 p-4 md:grid-cols-5">
           <label className="grid gap-2 text-sm text-slate-600">
@@ -375,7 +423,7 @@ const Appointments = () => {
               <Select.Trigger />
               <Select.Content>
                 <Select.Item value="all">All</Select.Item>
-                {statusOptions.map((option) => (
+                {appointmentStatusOptions.map((option) => (
                   <Select.Item key={option.value} value={option.value}>
                     {option.label}
                   </Select.Item>
@@ -503,7 +551,8 @@ const Appointments = () => {
             </Text>
           </div>
 
-          <div className="mt-4 grid gap-4">
+          <div className="app-scrollbar mt-4 max-h-[42rem] overflow-y-auto pr-2">
+            <div className="grid gap-4">
             {loading ? (
               <Card className="border border-slate-200 bg-white/70 p-6">
                 <Text size="2" className="text-slate-500">
@@ -532,6 +581,7 @@ const Appointments = () => {
               !error &&
               appointments.map((appointment) => {
                 const clinic = clinicMap.get(appointment.clinicId);
+                const normalizedStatus = normalizeAppointmentStatus(appointment.status);
                 return (
                   <Card
                     key={appointment._id}
@@ -550,14 +600,20 @@ const Appointments = () => {
                         </Text>
                       </div>
                       <div className="flex items-center gap-3">
-                        <Badge color={statusBadgeColor(appointment.status)} variant="soft">
-                          {appointment.status.replace("_", " ")}
+                        <Badge
+                          color={getAppointmentStatusBadgeColor(appointment.status)}
+                          variant="soft"
+                        >
+                          {formatAppointmentStatusLabel(appointment.status)}
                         </Badge>
+                        <Button asChild size="1" variant="soft">
+                          <Link to={`/appointments/${appointment._id}`}>Details</Link>
+                        </Button>
                         {user?.role === "patient" ? (
                           <Button
                             size="1"
                             variant="soft"
-                            disabled={appointment.status === "cancelled"}
+                            disabled={!isPatientCancelableStatus(appointment.status)}
                             onClick={() => updateStatus(appointment, "cancelled")}
                           >
                             Cancel
@@ -571,27 +627,49 @@ const Appointments = () => {
                             >
                               Edit
                             </Button>
-                            <Button
-                              size="1"
-                              variant="soft"
-                              onClick={() => updateStatus(appointment, "completed")}
-                            >
-                              Complete
-                            </Button>
-                            <Button
-                              size="1"
-                              variant="soft"
-                              onClick={() => updateStatus(appointment, "cancelled")}
-                            >
-                              Cancel
-                            </Button>
-                            <Button
-                              size="1"
-                              variant="soft"
-                              onClick={() => updateStatus(appointment, "no_show")}
-                            >
-                              No show
-                            </Button>
+                            {normalizedStatus === "pending" ? (
+                              <>
+                                <Button
+                                  size="1"
+                                  variant="soft"
+                                  onClick={() => updateStatus(appointment, "confirmed")}
+                                >
+                                  Confirm
+                                </Button>
+                                <Button
+                                  size="1"
+                                  variant="soft"
+                                  onClick={() => updateStatus(appointment, "cancelled")}
+                                >
+                                  Cancel
+                                </Button>
+                              </>
+                            ) : null}
+                            {normalizedStatus === "confirmed" ? (
+                              <>
+                                <Button
+                                  size="1"
+                                  variant="soft"
+                                  onClick={() => updateStatus(appointment, "completed")}
+                                >
+                                  Complete
+                                </Button>
+                                <Button
+                                  size="1"
+                                  variant="soft"
+                                  onClick={() => updateStatus(appointment, "cancelled")}
+                                >
+                                  Cancel
+                                </Button>
+                                <Button
+                                  size="1"
+                                  variant="soft"
+                                  onClick={() => updateStatus(appointment, "no_show")}
+                                >
+                                  No show
+                                </Button>
+                              </>
+                            ) : null}
                           </div>
                         )}
                       </div>
@@ -613,6 +691,7 @@ const Appointments = () => {
                   </Card>
                 );
               })}
+            </div>
           </div>
           <div className="mt-6 flex items-center justify-between">
             <Button

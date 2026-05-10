@@ -1,6 +1,28 @@
 import { Types } from "mongoose";
-import Appointment, { AppointmentStatus } from "../models/appointment.model";
+import Appointment, {
+  AppointmentPrescription,
+  AppointmentStatus,
+} from "../models/appointment.model";
 import Clinic from "../models/clinic.model";
+import { ACTIVE_APPOINTMENT_STATUSES, getActiveStatusFilter } from "../utils/appointment.util";
+
+const APPOINTMENT_SLOT_CACHE_TTL_MS = 60_000;
+const appointmentSlotCache = new Map<string, { cachedAt: number; slots: string[] }>();
+
+const getDateKey = (value: Date | string) => {
+  const date = typeof value === "string" ? new Date(value) : value;
+  return date.toISOString().slice(0, 10);
+};
+
+const getAppointmentSlotCacheKey = (clinicId: string | Types.ObjectId, date: Date | string) =>
+  `${String(clinicId)}:${getDateKey(date)}`;
+
+export const invalidateAppointmentSlotCache = (
+  clinicId: string | Types.ObjectId,
+  date: Date | string
+) => {
+  appointmentSlotCache.delete(getAppointmentSlotCacheKey(clinicId, date));
+};
 
 export type AppointmentCreateInput = {
   clinicId: string;
@@ -9,31 +31,41 @@ export type AppointmentCreateInput = {
   scheduledAt: Date;
   status?: AppointmentStatus;
   notes?: string;
+  prescriptions?: AppointmentPrescription[];
   updatedByUserId?: Types.ObjectId;
 };
 
 export type AppointmentUpdateInput = Partial<AppointmentCreateInput>;
 
-export const createAppointment = (
+export const createAppointment = async (
   createdByUserId: Types.ObjectId,
   payload: AppointmentCreateInput
-) =>
-  Appointment.create({
+) => {
+  const appointment = await Appointment.create({
     clinicId: new Types.ObjectId(payload.clinicId),
     createdByUserId,
     updatedByUserId: payload.updatedByUserId ?? createdByUserId,
     patientName: payload.patientName,
     patientPhone: payload.patientPhone,
     scheduledAt: payload.scheduledAt,
-    status: payload.status ?? "scheduled",
+    status: payload.status ?? "pending",
     notes: payload.notes,
+    prescriptions: payload.prescriptions ?? [],
   });
+  invalidateAppointmentSlotCache(payload.clinicId, payload.scheduledAt);
+  return appointment;
+};
 
-export const findClinicAppointmentConflict = (clinicId: string, scheduledAt: Date) =>
+export const findClinicAppointmentConflict = (
+  clinicId: string,
+  scheduledAt: Date,
+  excludeAppointmentId?: string
+) =>
   Appointment.findOne({
     clinicId: new Types.ObjectId(clinicId),
     scheduledAt,
-    status: { $in: ["scheduled", "completed"] },
+    status: { $in: ACTIVE_APPOINTMENT_STATUSES },
+    ...(excludeAppointmentId ? { _id: { $ne: new Types.ObjectId(excludeAppointmentId) } } : {}),
     deletedAt: null,
   }).exec();
 
@@ -66,7 +98,8 @@ export const listAppointments = async (
   }
 
   if (opts.status) {
-    filter.status = opts.status;
+    const statuses = getActiveStatusFilter(opts.status);
+    filter.status = statuses.length === 1 ? statuses[0] : { $in: statuses };
   }
 
   if (opts.dateFrom || opts.dateTo) {
@@ -83,7 +116,7 @@ export const listAppointments = async (
   const skip = (opts.page - 1) * opts.limit;
   const sortKey = opts.sortBy ?? "scheduledAt";
   const sortOrder = opts.sortOrder === "asc" ? 1 : -1;
-  const sort: Record<string, number> = { [sortKey]: sortOrder };
+  const sort: Record<string, 1 | -1> = { [sortKey]: sortOrder };
   const [appointments, total] = await Promise.all([
     Appointment.find(filter).sort(sort).skip(skip).limit(opts.limit).exec(),
     Appointment.countDocuments(filter).exec(),
@@ -95,8 +128,11 @@ export const listAppointments = async (
 export const getAppointmentById = (id: string) =>
   Appointment.findOne({ _id: id, deletedAt: null }).exec();
 
-export const updateAppointment = (id: string, updates: AppointmentUpdateInput) =>
-  Appointment.findOneAndUpdate(
+export const updateAppointment = async (id: string, updates: AppointmentUpdateInput) => {
+  const existing = await Appointment.findOne({ _id: id, deletedAt: null }).exec();
+  if (!existing) return null;
+
+  const appointment = await Appointment.findOneAndUpdate(
     { _id: id, deletedAt: null },
     {
       ...updates,
@@ -106,12 +142,29 @@ export const updateAppointment = (id: string, updates: AppointmentUpdateInput) =
     { new: true, runValidators: true }
   ).exec();
 
-export const deleteAppointment = (id: string) =>
-  Appointment.findOneAndUpdate(
+  if (!appointment) return null;
+
+  invalidateAppointmentSlotCache(existing.clinicId, existing.scheduledAt);
+  invalidateAppointmentSlotCache(appointment.clinicId, appointment.scheduledAt);
+
+  return appointment;
+};
+
+export const deleteAppointment = async (id: string) => {
+  const existing = await Appointment.findOne({ _id: id, deletedAt: null }).exec();
+  if (!existing) return null;
+
+  const appointment = await Appointment.findOneAndUpdate(
     { _id: id, deletedAt: null },
     { deletedAt: new Date() },
     { new: true }
   ).exec();
+
+  if (!appointment) return null;
+
+  invalidateAppointmentSlotCache(existing.clinicId, existing.scheduledAt);
+  return appointment;
+};
 
 export const countTodayAppointments = async (
   clinicIds: Types.ObjectId[] | null,
@@ -124,7 +177,7 @@ export const countTodayAppointments = async (
 
   const filter: Record<string, unknown> = {
     scheduledAt: { $gte: start, $lte: end },
-    status: { $in: ["scheduled", "completed"] },
+    status: { $in: ACTIVE_APPOINTMENT_STATUSES },
     deletedAt: null,
   };
   if (clinicIds) {
@@ -148,7 +201,7 @@ export const refreshClinicAppointmentsToday = async (clinicId: Types.ObjectId | 
   const total = await Appointment.countDocuments({
     clinicId: id,
     scheduledAt: { $gte: start, $lte: end },
-    status: { $in: ["scheduled", "completed"] },
+    status: { $in: ACTIVE_APPOINTMENT_STATUSES },
     deletedAt: null,
   }).exec();
 
@@ -157,17 +210,25 @@ export const refreshClinicAppointmentsToday = async (clinicId: Types.ObjectId | 
 };
 
 export const getBookedSlotsForDate = async (clinicId: string, date: string) => {
+  const cacheKey = getAppointmentSlotCacheKey(clinicId, date);
+  const cached = appointmentSlotCache.get(cacheKey);
+  if (cached && Date.now() - cached.cachedAt < APPOINTMENT_SLOT_CACHE_TTL_MS) {
+    return cached.slots;
+  }
+
   const start = new Date(`${date}T00:00:00.000Z`);
   const end = new Date(`${date}T23:59:59.999Z`);
 
   const appointments = await Appointment.find({
     clinicId: new Types.ObjectId(clinicId),
     scheduledAt: { $gte: start, $lte: end },
-    status: { $in: ["scheduled", "completed"] },
+    status: { $in: ACTIVE_APPOINTMENT_STATUSES },
     deletedAt: null,
   })
     .select("scheduledAt")
     .exec();
 
-  return appointments.map((a) => a.scheduledAt.toISOString());
+  const slots = appointments.map((a) => a.scheduledAt.toISOString());
+  appointmentSlotCache.set(cacheKey, { cachedAt: Date.now(), slots });
+  return slots;
 };

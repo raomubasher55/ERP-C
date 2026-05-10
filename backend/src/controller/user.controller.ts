@@ -1,13 +1,108 @@
 import { Request, Response } from "express";
 import { listUsers } from "../services/user.list.service";
-import { getUserById, updateUserClinics, updateUserRole } from "../services/user.service";
 import {
+  getUserById,
+  updateUserClinics,
+  updateUserProfile,
+  updateUserRole,
+} from "../services/user.service";
+import {
+  patientProfileUpdateSchema,
   userIdParamSchema,
   userListQuerySchema,
   userClinicsUpdateSchema,
   userRoleUpdateSchema,
 } from "../validators/user.validator";
 import { formatZodError } from "../utils/validation.util";
+
+export const getMyProfileHandler = async (req: Request, res: Response) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    if (req.user.role !== "patient") {
+      return res.status(403).json({ message: "Forbidden" });
+    }
+
+    return res.status(200).json({ user: req.user.toJSON() });
+  } catch (err) {
+    return res.status(500).json({ message: (err as Error).message });
+  }
+};
+
+export const updateMyProfileHandler = async (req: Request, res: Response) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    if (req.user.role !== "patient") {
+      return res.status(403).json({ message: "Forbidden" });
+    }
+
+    const parsed = patientProfileUpdateSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({
+        message: "Validation error",
+        errors: formatZodError(parsed.error),
+      });
+    }
+
+    const updates: Record<string, unknown> = {
+      updatedByUserId: req.user._id,
+    };
+
+    if (parsed.data.name !== undefined) {
+      updates.name = parsed.data.name;
+    }
+
+    if (parsed.data.patientProfile?.dateOfBirth !== undefined) {
+      updates["patientProfile.dateOfBirth"] = new Date(
+        `${parsed.data.patientProfile.dateOfBirth}T00:00:00.000Z`
+      );
+    }
+    if (parsed.data.patientProfile?.gender !== undefined) {
+      updates["patientProfile.gender"] = parsed.data.patientProfile.gender;
+    }
+
+    if (parsed.data.contact?.phone !== undefined) {
+      updates["contact.phone"] = parsed.data.contact.phone;
+    }
+    if (parsed.data.contact?.address !== undefined) {
+      updates["contact.address"] = parsed.data.contact.address;
+    }
+    if (parsed.data.contact?.city !== undefined) {
+      updates["contact.city"] = parsed.data.contact.city;
+    }
+    if (parsed.data.contact?.emergencyContact?.name !== undefined) {
+      updates["contact.emergencyContact.name"] = parsed.data.contact.emergencyContact.name;
+    }
+    if (parsed.data.contact?.emergencyContact?.phone !== undefined) {
+      updates["contact.emergencyContact.phone"] = parsed.data.contact.emergencyContact.phone;
+    }
+    if (parsed.data.contact?.emergencyContact?.relation !== undefined) {
+      updates["contact.emergencyContact.relation"] = parsed.data.contact.emergencyContact.relation;
+    }
+
+    if (parsed.data.consent) {
+      updates["consent.treatment"] = parsed.data.consent.treatment;
+      updates["consent.dataProcessing"] = parsed.data.consent.dataProcessing;
+      updates["consent.marketing"] = parsed.data.consent.marketing;
+      updates["consent.smsReminders"] = parsed.data.consent.smsReminders;
+      updates["consent.updatedAt"] = new Date();
+    }
+
+    const user = await updateUserProfile(req.user._id, updates);
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    return res.status(200).json({ user: user.toJSON() });
+  } catch (err) {
+    return res.status(500).json({ message: (err as Error).message });
+  }
+};
 
 export const listUsersHandler = async (req: Request, res: Response) => {
   try {

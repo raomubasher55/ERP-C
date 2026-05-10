@@ -1,4 +1,5 @@
 import User, { UserDocument } from "../models/user.model";
+import { Types, UpdateQuery } from "mongoose";
 
 export const getUserByEmail = (email: string) =>
   User.findOne({ email }).exec();
@@ -28,3 +29,12 @@ export const updateUserClinics = (id: string, clinicIds: string[]) =>
     { clinicIds },
     { new: true, runValidators: true }
   ).exec();
+
+export const updateUserProfile = (
+  id: string | Types.ObjectId,
+  updates: UpdateQuery<UserDocument>
+) =>
+  User.findByIdAndUpdate(id, updates, {
+    new: true,
+    runValidators: true,
+  }).exec();

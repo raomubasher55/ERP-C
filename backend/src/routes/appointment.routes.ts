@@ -10,6 +10,7 @@ import {
   appointmentSlotsHandler,
   todayAppointmentsHandler,
   updateAppointmentHandler,
+  updateAppointmentPrescriptionsHandler,
 } from "../controller/appointment.controller";
 
 const router = Router();
@@ -40,6 +41,11 @@ router.patch(
   "/:id",
   requirePermission(["appointments.manage", "appointments.cancel"]),
   updateAppointmentHandler
+);
+router.patch(
+  "/:id/prescriptions",
+  requirePermission("appointments.manage"),
+  updateAppointmentPrescriptionsHandler
 );
 router.delete("/:id", requirePermission("appointments.manage"), deleteAppointmentHandler);
 

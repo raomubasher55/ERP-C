@@ -4,8 +4,14 @@ import AdminDashboard from "./pages/AdminDashboard";
 import ClinicDashboard from "./pages/ClinicDashboard";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
+import LandingPage from "./pages/LandingPage";
 import PatientDashboard from "./pages/PatientDashboard";
 import Appointments from "./pages/Appointments";
+import AppointmentDetails from "./pages/AppointmentDetails";
+import Billing from "./pages/Billing";
+import Inventory from "./pages/Inventory";
+import ReceiptDetails from "./pages/ReceiptDetails";
+import Reports from "./pages/Reports";
 import "./App.css";
 
 const getDefaultPath = (role?: string) => {
@@ -72,9 +78,9 @@ function App() {
         <Route
           path="/"
           element={
-            <RequireAuth>
-              <div />
-            </RequireAuth>
+            <PublicOnly>
+              <LandingPage />
+            </PublicOnly>
           }
         />
         <Route
@@ -115,6 +121,70 @@ function App() {
               ]}
             >
               <Appointments />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/appointments/:id"
+          element={
+            <RequireAuth
+              allowedRoles={[
+                "admin",
+                "clinic_owner",
+                "clinic",
+                "doctor",
+                "receptionist",
+                "patient",
+              ]}
+            >
+              <AppointmentDetails />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/billing"
+          element={
+            <RequireAuth
+              allowedRoles={["admin", "clinic_owner", "clinic", "doctor", "receptionist"]}
+            >
+              <Billing />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/inventory"
+          element={
+            <RequireAuth
+              allowedRoles={["admin", "clinic_owner", "clinic", "doctor", "receptionist"]}
+            >
+              <Inventory />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/billing/receipts/:id"
+          element={
+            <RequireAuth
+              allowedRoles={[
+                "admin",
+                "clinic_owner",
+                "clinic",
+                "doctor",
+                "receptionist",
+                "patient",
+              ]}
+            >
+              <ReceiptDetails />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/reports"
+          element={
+            <RequireAuth
+              allowedRoles={["admin", "clinic_owner", "clinic", "doctor", "receptionist"]}
+            >
+              <Reports />
             </RequireAuth>
           }
         />
